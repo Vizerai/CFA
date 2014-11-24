@@ -1,0 +1,456 @@
+#ifndef MATRIX_OPS_DEVICE
+#define MATRIX_OPS_DEVICE
+
+#define QUEUE_SIZE		512
+
+namespace device
+{
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void AccumMat(	const 	INDEX_TYPE num_rows,
+							const 	INDEX_TYPE num_cols,
+							const 	INDEX_TYPE num_cols_per_row,
+							const 	INDEX_TYPE pitch,
+							const 	INDEX_TYPE *column_indices,
+									VALUE_TYPE *a)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	const INDEX_TYPE invalid_index = cusp::ell_matrix<int, VALUE_TYPE, cusp::device_memory>::invalid_index;
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE offset = row;
+		for(int n=0; n < num_cols_per_row; ++n)
+		{
+			int col = column_indices[offset];
+			if(col != invalid_index)
+			{
+				a[row] = 1;
+			}
+			offset += pitch;
+		}
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void 
+column_select(	const INDEX_TYPE num_rows,
+				const INDEX_TYPE *A_row_offsets,
+				const INDEX_TYPE *A_column_indices,
+				const VALUE_TYPE *s,
+				VALUE_TYPE *y)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	const INDEX_TYPE index = s[0];
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE offset = A_row_offsets[row];
+		INDEX_TYPE num_cols_per_row = A_row_offsets[row + 1] - offset;
+
+		VALUE_TYPE val = 0;
+		for(int n=0; n < num_cols_per_row; ++n, ++offset)
+		{
+			int col = A_column_indices[offset];
+			if(col == index)
+			{
+				val = 1;
+			}
+		}
+
+		y[row] = val;
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void 
+column_select_if(	const INDEX_TYPE num_rows,
+					const INDEX_TYPE *A_row_offsets,
+					const INDEX_TYPE *A_column_indices,
+					const VALUE_TYPE *s,
+					const VALUE_TYPE *cond,
+					VALUE_TYPE *y)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	//check conditional value
+	if(cond[0] == 0)
+		return;
+
+	const int index = s[0];
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE offset = A_row_offsets[row];
+		INDEX_TYPE num_cols_per_row = A_row_offsets[row + 1] - offset;
+
+		VALUE_TYPE val = 0;
+		for(int n=0; n < num_cols_per_row; ++n, ++offset)
+		{
+			int col = A_column_indices[offset];
+			if(col == index)
+			{
+				val = 1;
+			}
+		}
+
+		y[row] = val;
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void 
+ell_add(	const INDEX_TYPE num_rows,
+			const INDEX_TYPE num_cols,
+			const INDEX_TYPE A_num_cols_per_row,
+			const INDEX_TYPE B_num_cols_per_row,
+			const INDEX_TYPE C_num_cols_per_row,
+			const INDEX_TYPE A_pitch,
+			const INDEX_TYPE B_pitch,
+			const INDEX_TYPE C_pitch,
+			const INDEX_TYPE *A_column_indices,
+			const INDEX_TYPE *B_column_indices,
+			INDEX_TYPE *C_column_indices,
+			VALUE_TYPE *C_values)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	//__shared__ int entry_count[BLOCK_THREADS];
+	const INDEX_TYPE invalid_index = cusp::ell_matrix<int, VALUE_TYPE, cusp::device_memory>::invalid_index;
+
+	//entry_count[tID] = 0;
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		int a_index = row;
+		int b_index = row;
+		int c_index = row;
+		int A_col = A_column_indices[a_index];
+		int B_col = B_column_indices[b_index];
+		for(int n=0; n < C_num_cols_per_row; ++n, c_index+=C_pitch)
+		{
+			if(A_col == invalid_index && B_col == invalid_index)
+			{
+				C_column_indices[c_index] = invalid_index;
+			}
+			else if(A_col != invalid_index && B_col == invalid_index)
+			{
+				C_column_indices[c_index] = A_col;
+				C_values[c_index] = 1;
+				
+				a_index += A_pitch;
+
+				if(a_index < A_num_cols_per_row * A_pitch)
+					A_col = A_column_indices[a_index];
+				else
+					A_col = invalid_index;
+				//entry_count[tID]++;
+			}
+			else if(A_col == invalid_index && B_col != invalid_index)
+			{
+				C_column_indices[c_index] = B_col;
+				C_values[c_index] = 1;
+				
+				b_index += B_pitch;
+
+				if(b_index < B_num_cols_per_row * B_pitch)
+					B_col = B_column_indices[b_index];
+				else
+					B_col = invalid_index;
+				//entry_count[tID]++;
+			}
+			else if(A_column_indices[a_index] < B_column_indices[b_index])
+			{
+				C_column_indices[c_index] = A_col;
+				C_values[c_index] = 1;
+				
+				a_index += A_pitch;
+
+				if(a_index < A_num_cols_per_row * A_pitch)
+					A_col = A_column_indices[a_index];
+				else
+					A_col = invalid_index;
+				//entry_count[tID]++;
+			}
+			else if(B_column_indices[b_index] < A_column_indices[a_index])
+			{
+				C_column_indices[c_index] = B_col;
+				C_values[c_index] = 1;
+				
+				b_index += B_pitch;
+
+				if(b_index < B_num_cols_per_row * B_pitch)
+					B_col = B_column_indices[b_index];
+				else
+					B_col = invalid_index;
+				//entry_count[tID]++;
+			}
+			else if(A_column_indices[a_index] == B_column_indices[b_index])
+			{
+				C_column_indices[c_index] = A_col;
+				C_values[c_index] = 1;
+				
+				a_index += A_pitch;
+				b_index += B_pitch;
+
+				if(a_index < A_num_cols_per_row * A_pitch)
+					A_col = A_column_indices[a_index];
+				else
+					A_col = invalid_index;
+				if(b_index < B_num_cols_per_row * B_pitch)
+					B_col = B_column_indices[b_index];
+				else
+					B_col = invalid_index;
+				//entry_count[tID]++;
+			}
+		}
+	}
+	//__syncthreads();
+
+	// reduce_sum<INDEX_TYPE>(entry_count, BLOCK_THREADS, tID);
+	// if(tID == 0)
+	// 	*C_num_entries = entry_count[0];
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void 
+LoadEllMatrix(	const INDEX_TYPE num_rows,
+				const INDEX_TYPE num_entries,
+				const INDEX_TYPE num_cols_per_row,
+				const INDEX_TYPE pitch,
+				const INDEX_TYPE *src_row_offsets,
+				const INDEX_TYPE *src_column_indices,
+				const VALUE_TYPE *src_values,
+				INDEX_TYPE *dst_column_indices,
+				VALUE_TYPE *dst_values)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+	const INDEX_TYPE invalid_index = cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory>::invalid_index;
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE row_start = src_row_offsets[row];
+		INDEX_TYPE row_end = src_row_offsets[row + 1];
+		INDEX_TYPE offset = row;
+
+		dst_column_indices[row] = (row_end - row_start);
+		for(int j=row_start; j < row_end; ++j, offset+=pitch)
+		{
+			dst_column_indices[offset] = src_column_indices[j];
+			dst_values[offset] = src_values[j];
+		}
+
+		while(offset < num_cols_per_row * pitch)
+		{
+			dst_column_indices[offset] = invalid_index;
+			offset += pitch;
+		}
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void 
+LoadHybMatrix(	const INDEX_TYPE num_rows,
+				const INDEX_TYPE num_entries,
+				const INDEX_TYPE num_cols_per_row,
+				const INDEX_TYPE pitch,
+				const INDEX_TYPE *src_row_offsets,
+				const INDEX_TYPE *src_column_indices,
+				INDEX_TYPE *dst_row_sizes,
+				INDEX_TYPE *dst_column_indices,
+				INDEX_TYPE *dst_coo_row_indices,
+				INDEX_TYPE *dst_coo_column_indices)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+	const INDEX_TYPE invalid_index = cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory>::invalid_index;
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE row_start = src_row_offsets[row];
+		INDEX_TYPE row_end = src_row_offsets[row + 1];
+		INDEX_TYPE offset = row;
+
+		dst_row_sizes[row] = (row_end - row_start);
+		for(int j=row_start; j < row_end; ++j, offset+=pitch)
+		{
+			if(offset < num_cols_per_row * pitch)
+			{
+				dst_column_indices[offset] = src_column_indices[j];
+			}
+			else
+			{
+				INDEX_TYPE index = atomicAdd(&dst_coo_column_indices[0],1)+1;
+				dst_coo_column_indices[index] = src_column_indices[j];
+				dst_coo_row_indices[index] = row;
+			}
+		}
+
+		while(offset < num_cols_per_row * pitch)
+		{
+			dst_column_indices[offset] = invalid_index;
+			offset += pitch;
+		}
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void 
+LoadDellMatrix_B(	const INDEX_TYPE num_rows,
+					const INDEX_TYPE chunk_size,
+					const INDEX_TYPE chunk_length,
+					const INDEX_TYPE *src_row_offsets,
+					const INDEX_TYPE *src_column_indices,
+					INDEX_TYPE *dst_ci,
+					INDEX_TYPE *dst_cl,
+					INDEX_TYPE *dst_column_indices)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+	const INDEX_TYPE invalid_index = cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory>::invalid_index;
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE cidx = row / chunk_size;
+		INDEX_TYPE src_row_start = src_row_offsets[row];
+		INDEX_TYPE src_row_end = src_row_offsets[row + 1];
+		INDEX_TYPE dst_row_start = cidx + (row % chunk_size)*dst_cl[cidx];
+		INDEX_TYPE dst_row_end = dst_row_start + dst_cl[cidx];
+
+		INDEX_TYPE offset;
+		for(offset=0; offset < src_row_end - src_row_start; ++offset)
+		{
+			if(offset < (dst_row_end - dst_row_start))
+			{
+				dst_column_indices[dst_row_start + offset] = src_column_indices[src_row_start + offset];
+			}
+			else
+			{
+				//overflow...   shouldn't happen on initialization
+			}
+		}
+
+		while(offset < (dst_row_end - dst_row_start))
+		{
+			dst_column_indices[offset] = invalid_index;
+			offset++;
+		}
+
+		dst_cl[cidx] = chunk_length;
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void 
+CalcRowOffsets(	const INDEX_TYPE num_rows,
+				const INDEX_TYPE num_cols_per_row,
+				const INDEX_TYPE pitch,
+				const INDEX_TYPE *src_row_offsets,
+				const INDEX_TYPE *src_ELL_column_indices,
+				INDEX_TYPE *dst_row_offsets)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+	const INDEX_TYPE invalid_index = cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory>::invalid_index;
+
+	if(tID == 0)
+		dst_row_offsets[0] = 0;
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		dst_row_offsets[row+1] = src_row_offsets[row+1] - src_row_offsets[row] + src_ELL_column_indices[row];
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void 
+CalcRowOffsets(	const INDEX_TYPE num_rows,
+				const INDEX_TYPE *old_row_offsets,
+				INDEX_TYPE *new_row_offsets,
+				const INDEX_TYPE *column_indices,
+				const INDEX_TYPE threshold)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+	const INDEX_TYPE invalid_index = -1;
+
+	if(tID == 0)
+		new_row_offsets[0] = 0;
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE row_start = old_row_offsets[row];
+		INDEX_TYPE row_end = old_row_offsets[row + 1];
+		INDEX_TYPE count = 0;
+
+		for(int i=row_start; i < row_end; ++i)
+		{
+			if(column_indices[i] != invalid_index)
+				count++;
+		}
+
+		if(count == (row_end - row_start))
+			new_row_offsets[row+1] = 4*(row_end - row_start) + row_start;
+		else if(count >= (row_end - row_start)/2)
+			new_row_offsets[row+1] = 2*(row_end - row_start) + row_start;
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS_MAX,1)
+__global__ void 
+RebuildMatrix(	const INDEX_TYPE num_rows,
+				const INDEX_TYPE num_cols_per_row,
+				const INDEX_TYPE pitch,
+				const INDEX_TYPE *src_row_offsets,
+				const INDEX_TYPE *src_CSR_column_indices,
+				const INDEX_TYPE *src_ELL_column_indices,
+				const INDEX_TYPE *dst_row_offsets,
+				INDEX_TYPE *dst_column_indices)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+	const INDEX_TYPE invalid_index = cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory>::invalid_index;
+
+	for(int row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE dst_index = dst_row_offsets[row];
+
+		INDEX_TYPE src_start = src_row_offsets[row];
+		INDEX_TYPE src_end = src_row_offsets[row+1];
+		for(int j=src_start; j < src_end; ++j)
+		{
+			dst_column_indices[dst_index] = src_CSR_column_indices[j];
+			dst_index++;
+		}
+
+		INDEX_TYPE ell_count = src_ELL_column_indices[row];
+		INDEX_TYPE offset = row + 1;
+		for(int j=0; j < ell_count; ++j)
+		{
+			dst_column_indices[dst_index] = src_ELL_column_indices[offset];
+			dst_index++;
+			offset += pitch;
+		}
+	}
+}
+
+}	//namespace device
+
+#endif

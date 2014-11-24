@@ -1,8 +1,6 @@
 #ifndef SPARSE_H
 #define SPARSE_H
 
-#include <cusp/array1d.h>
-#include <cusp/print.h>
 #include <thrust/sort.h>
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
@@ -27,24 +25,5 @@ inline void safeSync()
 	if(error != cudaSuccess)
 		fprintf( stderr, "!! GPU program execution error on line %d : cudaError=%d, (%s)\n", __LINE__, error, cudaGetErrorString(error));
 }
-
-// inline void checkCUDAError(const char *msg)
-// {
-// 	cudaError_t err = cudaGetLastError();
-// 	if( cudaSuccess != err) 
-// 	{
-// 		fprintf(stderr, "Cuda error: %s: %s\n", msg, cudaGetErrorString(err));
-// 		exit(EXIT_FAILURE);
-// 	}
-// }
-
-// inline void checkCUDAError(const cudaError_t err, const char *msg)
-// {
-// 	if( cudaSuccess != err) 
-// 	{
-// 		fprintf(stderr, "Cuda error: %s: %s\n", msg, cudaGetErrorString(err));
-// 		exit(EXIT_FAILURE);
-// 	}
-// }
 
 #endif

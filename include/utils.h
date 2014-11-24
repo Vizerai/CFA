@@ -6,5 +6,6 @@
 #include <string>
 
 void Test(std::string filename);
+void Matrix_Test(std::string filename);
 
 #endif

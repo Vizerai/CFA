@@ -10,8 +10,10 @@ void AND_OP(	const cusp::array1d<VALUE_TYPE, cusp::host_memory> &A,
 	vec.clear();
 
 	for(int i=0; i<A.size(); ++i)
+	{	
 		if(A[i] > 0 && B[i] > 0)
 			vec.push_back(i);
+	}
 }
 
 template <typename VALUE_TYPE>
@@ -51,18 +53,17 @@ void OuterProduct(	const cusp::array1d<VALUE_TYPE, cusp::host_memory> &a,
 
 	//fprintf(stderr, "num_entries: %d %d\n", num_entries_a, num_entries_b);
 	mat.resize(a.size(), b.size(), num_entries_a*num_entries_b);
-	INDEX_TYPE row_offset = 0, offset = 0;
+	INDEX_TYPE row_offset = 0;
 	for(int i=0; i<a.size(); ++i)
 	{
 		mat.row_offsets[i] = row_offset;
 		if(a[i])
 		{
-			for(int j=0; j<b_vec.size(); ++j,++offset)
+			for(int j=0; j<b_vec.size(); ++j,++row_offset)
 			{
-				mat.column_indices[offset] = b_vec[j];
-				mat.values[offset] = 1;
+				mat.column_indices[row_offset] = b_vec[j];
+				mat.values[row_offset] = 1;
 			}
-			row_offset += b_vec.size();
 		}
 	}
 	mat.row_offsets[a.size()] = row_offset;

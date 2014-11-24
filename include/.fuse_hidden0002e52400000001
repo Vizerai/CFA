@@ -391,7 +391,6 @@ void FillMatrix(	dell_matrix_B<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &mat
 			infoMat.num_rows,
 			infoMat.chunks,
 			infoMat.chunk_size,
-			infoMat.pitch,
 			TPC(&rows[idx]),
 			TPC(&cols[idx]),
 			N,
@@ -400,6 +399,7 @@ void FillMatrix(	dell_matrix_B<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &mat
 			TPC(&mat.cl[0]),
 			TPC(&mat.ca[0]),
 			TPC(&mat.rs[0]),
+			TPC(&mat.rm[0]),
 			TPC(&mat.cols[0]));
 }
 
@@ -428,6 +428,7 @@ void FillMatrixW(	dell_matrix_B<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &ma
 			TPC(&mat.cl[0]),
 			TPC(&mat.ca[0]),
 			TPC(&mat.rs[0]),
+			TPC(&mat.rm[0]),
 			TPC(&mat.cols[0]));
 }
 
@@ -472,12 +473,12 @@ void Initialize_Matrix(	dell_matrix_B<INDEX_TYPE, VALUE_TYPE, cusp::device_memor
 			infoMat.chunks,
 			infoMat.chunk_size,
 			infoMat.chunk_length,
-			infoMat.pitch,
 			TPC(&mat.Matrix_MD[0]),
 			TPC(&mat.ci[0]),
 			TPC(&mat.cl[0]),
 			TPC(&mat.ca[0]),
 			TPC(&mat.rs[0]),
+			TPC(&mat.rm[0]),
 			TPC(&mat.cols[0]));
 }
 

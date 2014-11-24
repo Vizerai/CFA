@@ -39,7 +39,7 @@ void runTest(int argc, char** argv)
 	}
 
 	std::string filename(argv[1]);
-	Test(filename);
-//	GPU_Test();
+	//Test(filename);
+	Matrix_Test(filename);
 
 }
