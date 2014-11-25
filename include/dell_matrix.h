@@ -23,15 +23,15 @@ struct dell_matrix         //dynamic ELL matrix
     size_t num_cols;
     size_t num_entries;
 
-    void resize(const size_t n_rows, const size_t n_cols, const size_t c_size, const size_t c_length, const size_t overflow=DEFAULT_OVERFLOW)
+    void resize(const size_t n_rows, const size_t n_cols, const size_t c_size, const size_t c_length)
     {
         size_t max_layers = 8;
 
         chunk_size = c_size;
         chunk_length = c_length;
         chunks = ceil(double(n_rows) / double(chunk_size));
-        pitch = ALIGN_UP(chunks, 32);
-        mem_size = pitch * c_length * max_layers;
+        pitch = chunk_size;
+        mem_size = pitch * c_length * chunks * max_layers;
         num_rows = n_rows;
         num_cols = n_cols;
         num_entries = 0;
@@ -58,7 +58,7 @@ struct dell_matrix_B         //dynamic ELL matrix
 
     float alpha;                //alpha threshold
     size_t pitch;
-    size_t chunks;
+    size_t init_chunks;         //number of initial chunks
     size_t chunk_size;          //chunk size
     size_t chunk_length;        //chunk length
     size_t mem_size;            //total memory used
@@ -66,29 +66,29 @@ struct dell_matrix_B         //dynamic ELL matrix
     size_t num_cols;
     size_t num_entries;
 
-    void resize(const size_t n_rows, const size_t n_cols, const size_t c_size, const size_t c_length, const size_t overflow=DEFAULT_OVERFLOW)
+    void resize(const size_t n_rows, const size_t n_cols, const size_t c_size, const size_t c_length)
     {
-        size_t max_layers = 16;
+        size_t max_layers = 8;
 
         chunk_size = c_size;
         chunk_length = c_length;
-        chunks = ceil(double(n_rows) / double(chunk_size));
+        init_chunks = ceil(double(n_rows) / double(chunk_size));
         pitch = chunk_size;
-        mem_size = pitch * c_length * chunks * max_layers;
+        mem_size = pitch * c_length * init_chunks * max_layers;
         num_rows = n_rows;
         num_cols = n_cols;
         num_entries = 0;
 
         fprintf(stderr, "rows: %d  cols: %d\n", n_rows, n_cols);
-        fprintf(stderr, "chunks: %d\n", chunks);
+        fprintf(stderr, "init_chunks: %d\n", init_chunks);
         fprintf(stderr, "chunk_size: %d\n", chunk_size);
         fprintf(stderr, "chunk_length: %d\n", chunk_length);
         fprintf(stderr, "mem_size: %d\n", mem_size);
 
         Matrix_MD.resize(4);
-        ci.resize(chunks*max_layers);
-        cl.resize(chunks*max_layers);
-        ca.resize(chunks*max_layers);
+        ci.resize(init_chunks*max_layers);
+        cl.resize(init_chunks*max_layers);
+        ca.resize(init_chunks*max_layers);
         rs.resize(num_rows);
         cols.resize(mem_size);
     }

@@ -347,18 +347,18 @@ OuterProductAdd_Queue(	const VALUE_TYPE *a,
 template <typename INDEX_TYPE, typename VALUE_TYPE>
 __launch_bounds__(BLOCK_THREADS_MAX,1)
 __global__ void 
-Update_DELL_B(	const INDEX_TYPE *update_rows,
+Update_DELL_B(	const INDEX_TYPE num_rows,
+				const INDEX_TYPE num_chunks,
+				const INDEX_TYPE chunk_size,
+				const INDEX_TYPE *update_rows,
 				const INDEX_TYPE *update_cols,
 				const INDEX_TYPE *update_offsets,
 				const INDEX_TYPE total_updates,
-				const INDEX_TYPE num_rows,
-				const INDEX_TYPE num_chunks,
-				const INDEX_TYPE chunk_size,
+				INDEX_TYPE *Matrix_MD,
 				INDEX_TYPE *ci,
 				INDEX_TYPE *cl,
-				INDEX_TYPE *cols,
-				INDEX_TYPE *overflow_col,
-				INDEX_TYPE *overflow_row)
+				INDEX_TYPE *ca,
+				INDEX_TYPE *cols)
 {
 	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
 	const int grid_size = blockDim.x * gridDim.x;
@@ -392,107 +392,8 @@ Update_DELL_B(	const INDEX_TYPE *update_rows,
 					}
 				}
 			}
-
-			//overflow
-			if(found == false)
-			{
-				bool valid = true;
-				for(int i=1; i < overflow_col[0]+1; ++i)
-				{
-					if(overflow_col[i] == col && overflow_row[i] == row)
-					{
-						valid = false;
-						break;
-					}
-				}
-
-				if(valid)
-				{
-					int index = overflow_col[0]+1;
-					if(atomicCAS(&overflow_col[index], -1, col) == -1)
-					{
-						atomicAdd(&overflow_col[0], 1);
-						overflow_row[index] = row;
-						overflow_col[index] = col;
-					}
-				}
-			}
 		}
 	}
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-__launch_bounds__(BLOCK_THREADS_MAX,1)
-__global__ void 
-ExpandMatrix_dell_B(	const INDEX_TYPE num_rows,
-						const INDEX_TYPE chunks,
-						const INDEX_TYPE chunk_size,
-						const float alpha,
-						INDEX_TYPE *layers,
-						INDEX_TYPE *ci,
-						INDEX_TYPE *cl,
-						INDEX_TYPE *rs,
-						INDEX_TYPE *rm,
-						INDEX_TYPE *cols)
-{
-	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
-	const int grid_size = blockDim.x * gridDim.x;
-
-	//if overflow then expand matrix with a new layer
-	// if(overflow_cols[0] > 0)
-	// {
-	// 	INDEX_TYPE n_layers = layers[0];
-	// 	//check if chunk needs expanding
-	// 	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
-	// 	{
-	// 		INDEX_TYPE cID = row / chunk_size;
-	// 		if((float(rs[row]) / float(rm[row])) > alpha)
-	// 		{
-	// 			ci[n_layers*chunks + cID] = cl[cID] * chunk_size;
-	// 			cl[n_layers*chunks + cID] = cl[cID];
-	// 		}
-	// 	}
-	// 	__syncthreads();
-
-	// 	//use tID for row
-	// 	if(tID < chunks)
-	// 	{
-	// 		if(ci[n_layers*chunks + tID] > 0)
-	// 			rm[tID] += cl[tID];
-	// 	}
-
-	// 	//have first block scan of ci values and compute correct chunk indices
-	// 	if(tID == 0)
-	// 		ci[chunks*n_layers] = ci[chunks*n_layers - 1] + chunk_size*cl[chunks*n_layers - 1];
-	// 	__syncthreads();
-
-	// 	prescanI(&ci[chunks*n_layers], chunks);
-
-	// 	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
-	// 	{
-	// 		INDEX_TYPE cID = row / chunk_size;
-	// 		INDEX_TYPE cur_idx = 0;
-
-	// 		// for(INDEX_TYPE i=1; i <= overflow_cols[0]; ++i)
-	// 		// {
-	// 		// 	if(overflow_rows[i] == row)
-	// 		// 	{
-	// 		// 		INDEX_TYPE col = overflow_cols[i];
-	// 		// 		INDEX_TYPE offset = ci[n_layers*chunks + cID] + (row % chunk_size)*cl[n_layers*chunks + cID];
-	// 		// 		cols[offset + cur_idx] = col;
-	// 		// 		rs[row] += 1;
-	// 		// 		cur_idx++;
-	// 		// 	}
-	// 		// }
-	// 	}
-	// 	__syncthreads();
-
-	// 	if(tID == 0)
-	// 		layers[0] += 1;
-
-	// 	// if(tID == 0)
-	// 	// 	overflow_cols[0] = 0;
-	// }
 }
 
 //*****************************************************************************//
@@ -502,7 +403,6 @@ template <typename INDEX_TYPE, typename VALUE_TYPE>
 __launch_bounds__(BLOCK_THREADS,1)
 __global__ void 
 UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
-					const INDEX_TYPE chunks,
 					const INDEX_TYPE chunk_size,
 					const INDEX_TYPE pitch,
 					const INDEX_TYPE *src_rows,
@@ -516,15 +416,15 @@ UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 					INDEX_TYPE *cols)
 {
 	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
-	const int lID = threadIdx.x;
+	//const int lID = threadIdx.x;
 	const int grid_size = blockDim.x * gridDim.x;
 
-	__shared__ volatile INDEX_TYPE rs_s[BLOCK_THREADS];
+	//__shared__ volatile INDEX_TYPE rs_s[BLOCK_THREADS];
 
 	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
 	{
-		rs_s[lID] = rs[row];
-		__syncthreads();
+		//rs_s[lID] = rs[row];
+		//__syncthreads();
 
 		for(INDEX_TYPE i=0; i < N; i++)
 		{
@@ -532,7 +432,8 @@ UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 			if(src_rows[i] == row)
 			{
 				INDEX_TYPE col = src_cols[i];
-				INDEX_TYPE rl = rs_s[lID];
+				//INDEX_TYPE rl = rs_s[lID];
+				INDEX_TYPE rl = rs[row];
 				INDEX_TYPE r_idx = 0, c_idx, offset;
 
 				bool valid = true;
@@ -555,7 +456,7 @@ UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 						}
 					}
 
-					if(next_cID > 0)
+					if(next_cID > 0 && r_idx < rl)
 					{
 						next_chunk = true;
 						cID = next_cID;
@@ -570,16 +471,16 @@ UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 					//cuPrintf("inserting col: %d  in row: %d\n", col, row);
 					//cols[offset + c_idx] = col;
 					cols[offset + c_idx*pitch] = col;
-					rs_s[lID] += 1;
+					rs[row] += 1;
+					//rs_s[lID] += 1;
 					valid = false;
-					//break;
 				}
 				else if(valid)
 				{
 					if(atomicCAS(&ci[cID], 0, -1) == 0)
 					{
 						INDEX_TYPE chunk_length = 2*cl[cID];
-						INDEX_TYPE new_add = atomicAdd(&Matrix_MD[1], chunk_size);
+						INDEX_TYPE new_add = atomicAdd(&Matrix_MD[1], chunk_size*chunk_length);
 						INDEX_TYPE new_cID = atomicAdd(&Matrix_MD[0], 1);
 
 						//allocate new block...
@@ -588,27 +489,26 @@ UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 						ci[cID] = new_cID;
 					}
 					
-					while(ci[cID] <= 0)
-					{}
+					while(ci[cID] <= 0) {}
 
 					if(ci[cID] > 0)
 					{
 						cID = ci[cID];
-						//INDEX_TYPE offset = ca[cID] + (row % chunk_size)*cl[cID];
 						INDEX_TYPE offset = ca[cID] + (row % chunk_size);
 
 						if(rl == r_idx)
 						{
 							//cuPrintf("inserting col: %d  in row: %d\n", col, row);
 							cols[offset] = col;
-							rs_s[lID] += 1;
+							rs[row] += 1;
+							//rs_s[lID] += 1;
 						}
 					}
 				}
 			}
 		}
 
-		rs[row] = rs_s[lID];
+		//rs[row] = rs_s[lID];
 	}
 }
 
@@ -616,7 +516,6 @@ template <typename INDEX_TYPE, typename VALUE_TYPE>
 __launch_bounds__(BLOCK_THREADS,1)
 __global__ void 
 UpdateMatrixW_dell_B(	const INDEX_TYPE num_rows,
-						const INDEX_TYPE chunks,
 						const INDEX_TYPE chunk_size,
 						const INDEX_TYPE *src_rows,
 						const INDEX_TYPE *src_cols,
@@ -642,132 +541,7 @@ UpdateMatrixW_dell_B(	const INDEX_TYPE num_rows,
 	{
 		for(INDEX_TYPE i=0; i < N; i+=WARP_SIZE)
 		{
-			if(i+wID < N)
-			{
-				int row_counter = 0;
-				int counter_idx = 0;
-				int cur_row = src_rows[i+wID];
-				int row_group = n / WARP_SIZE;
 
-				if( cur_row >= (row_group*WARP_SIZE) || cur_row < ((row_group+1)*WARP_SIZE) )
-					row_counter = 1;
-				counter_idx = row_counter;
-				warpScan(counter_idx, wID);
-
-				int offset = pool_size[gID];
-				if(row_counter)
-				{
-					warp_pool[gID*(WARP_SIZE*4) + (counter_idx-1) + pool_size[gID]] = cur_row;
-					warp_pool[gID*(WARP_SIZE*4) + (counter_idx-1) + pool_size[gID] + WARP_SIZE*2] = src_cols[i+wID];
-				}
-
-				if(wID == (WARP_SIZE-1) || i == (N-1))
-					pool_size[gID] += counter_idx;
-			}
-
-			if(pool_size[gID] >= WARP_SIZE || (i>>LOG_WARP_SIZE)+WARP_SIZE >= N)
-			{
-				//cuPrintf("value: %d  wID: %d\n", warp_pool[gID*(WARP_SIZE*4) + wID], wID);
-				warpSort32_Tuple(&warp_pool[gID*(WARP_SIZE*4)], &warp_pool[gID*(WARP_SIZE*4) + WARP_SIZE*2], wID);
-				//cuPrintf("sorted value: %d  wID: %d\n", warp_pool[gID*(WARP_SIZE*4) + wID], wID);
-
-				INDEX_TYPE row = warp_pool[gID*(WARP_SIZE*4) + wID];
-				INDEX_TYPE col = warp_pool[gID*(WARP_SIZE*4) + wID + WARP_SIZE*2];
-				INDEX_TYPE rl = rs[row];
-				INDEX_TYPE cID = row / chunk_size;
-				INDEX_TYPE r_idx = 0, c_idx, offset, warp_offset = 0;
-				bool valid = true;
-
-				for(int l=wID-1; l >= 0; l--)
-				{	
-					if(warp_pool[gID*(WARP_SIZE*4) + l] == warp_pool[gID*(WARP_SIZE*4) + wID])
-					{	
-						warp_offset++;
-						if(warp_pool[gID*(WARP_SIZE*4) + l + WARP_SIZE*2] == warp_pool[gID*(WARP_SIZE*4) + wID + WARP_SIZE*2])
-						{
-							valid = false;
-							warp_pool[gID*(WARP_SIZE*4) + wID] = -1;
-							break;
-						}
-					}
-					else
-						break;
-				}
-				for(int l=0; l < warp_offset; l++)
-				{
-					if(warp_pool[gID*(WARP_SIZE*4) + wID - l] == -1)
-						warp_offset--;
-				}
-				//cuPrintf("row: %d  col: %d  rl: %d  r_idx: %d\n", row, col, rl, r_idx);
-
-				for(INDEX_TYPE k = 0; k < Matrix_MD[0] && valid; k++)
-				{
-					offset = ca[cID] + (row % chunk_size)*cl[cID];
-					c_idx = 0;		//chunk length must be a multiple of WARP_SIZE (32) for this to work...
-
-					for(; c_idx < cl[cID] && r_idx < rl && valid; c_idx++, r_idx++)
-					{
-						if(cols[offset + c_idx] == col)
-						{
-							valid = false;
-							break;
-						}
-					}
-				}
-
-				if(rl+warp_offset < cl[cID] && valid)
-				{
-					//cuPrintf("inserting entry at:   offset: %d  c_idx: %d  row: %d  col: %d\n", offset, c_idx, row, col);
-					
-					//calculate minimum ID
-					cols[offset + c_idx + warp_offset] = col;
-					valid = false;
-
-					//adjust row indices based on number of entries in that row
-					if(wID == 0 || warp_pool[gID*(WARP_SIZE*4) + wID - 1] != warp_pool[gID*(WARP_SIZE*4) + wID])
-					{
-						INDEX_TYPE entry_offset = 0;
-						for(int l=wID+1; l < WARP_SIZE; l++)
-						{
-							if(warp_pool[gID*(WARP_SIZE*4) + l] == warp_pool[gID*(WARP_SIZE*4) + wID])
-								entry_offset++;
-							else
-								break;
-						}
-						rs[row] += (1 + entry_offset);
-					}
-				}
-				else if(valid)
-				{
-					// cuPrintf("overflow...    r_idx: %d\n", r_idx);
-					// bool ovf_valid = true;
-					// for(INDEX_TYPE i=wID+1; i <= overflow_cols[0]; i+=WARP_SIZE)
-					// {
-					// 	if(overflow_cols[i] == col && overflow_rows[i] == row)
-					// 	{
-					// 		ovf_valid = false;
-					// 		break;
-					// 	}
-					// }
-
-					// if(ovf_valid)
-					// {
-					// 	INDEX_TYPE index = atomicAdd(&overflow_cols[0], 1) + 1;
-					// 	overflow_rows[index] = row;
-					// 	overflow_cols[index] = col;
-					// 	rs[row] += 1;
-					// }
-				}
-
-				warp_pool[gID*(WARP_SIZE*4) + wID] = warp_pool[gID*(WARP_SIZE*4) + wID + WARP_SIZE];
-				if(wID == 0)
-				{
-					if(pool_size[gID] >= WARP_SIZE)
-						pool_size[gID] -= WARP_SIZE;
-					else
-						pool_size[gID] = 0;
-				}
-			}
 		}
 	}
 }
@@ -872,8 +646,7 @@ InitializeMatrix_dell_B(const INDEX_TYPE num_rows,
 	if(tID == 0)
 	{
 		Matrix_MD[0] = chunks;
-		Matrix_MD[1] = chunks*chunk_size;
-		//Matrix_MD[2] = chunks*chunk_size*chunk_length;
+		Matrix_MD[1] = chunks*chunk_size*chunk_length;
 	}
 }
 

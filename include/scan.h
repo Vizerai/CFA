@@ -5,7 +5,6 @@
 #define LOG_NUM_BANKS	5
 #define CONFLICT_FREE_OFFSET(n)		(n >> LOG_NUM_BANKS)
 
-<<<<<<< HEAD
 #define BITONIC_INDEX_REVERSE(i,j,gs,tID)		i = (tID/(gs>>1))*gs + (tID & ((gs>>1)-1));  j = (tID/(gs>>1))*gs + (gs - (tID & ((gs>>1)-1)) - 1)
 #define BITONIC_INDEX(i,j,gs,tID)				i = (tID/(gs>>1))*gs + (tID & ((gs>>1)-1));  j = (gs>>1) + i
 #define SWAP(X,Y,T)								T = X; X = Y; Y = T
@@ -275,10 +274,6 @@ __device__ inline void warpSort64(T *data, const int wID)
 
 template<typename T>
 __device__ inline void prescanE(T *g_odata, T *g_idata, T *temp, const int n)
-=======
-template<typename T>
-__device__ void prescanE(T *g_odata, T *g_idata, T *temp, const int n)
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 {
 	int tID = threadIdx.x;  
 	int offset = 1;
@@ -332,11 +327,7 @@ __device__ void prescanE(T *g_odata, T *g_idata, T *temp, const int n)
 }
 
 template<typename T>
-<<<<<<< HEAD
 __device__ inline void prescanE(T *data, const int n)
-=======
-__device__ void prescanE(T *data, const int n)
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 {
 	int tID = threadIdx.x;  
 	int offset = 1;
@@ -380,11 +371,7 @@ __device__ void prescanE(T *data, const int n)
 }
 
 template<typename T>
-<<<<<<< HEAD
 __device__ inline void prescanI(T *data, const int n)
-=======
-__device__ void prescanI(T *data, const int n)
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 {
 	int tID = threadIdx.x;  
 	int offset = 1;

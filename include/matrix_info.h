@@ -10,7 +10,7 @@ struct mat_info
     INDEX_TYPE num_entries_coo;
     INDEX_TYPE num_cols_per_row;
     INDEX_TYPE pitch;
-    INDEX_TYPE chunks;
+    INDEX_TYPE num_chunks;
     INDEX_TYPE chunk_size;
     INDEX_TYPE chunk_length;
     float alpha;
@@ -22,7 +22,7 @@ inline void get_matrix_info(const dell_matrix<INDEX_TYPE, VALUE_TYPE, MEM_TYPE> 
     info.num_rows = mat.num_rows;
     info.num_cols = mat.num_cols;
     info.num_entries = mat.num_entries;
-    info.chunks = mat.chunks;
+    info.num_chunks = mat.init_chunks;
     info.chunk_size = mat.chunk_size;
     info.chunk_length = mat.chunk_length;
     info.alpha = mat.alpha;
@@ -35,7 +35,7 @@ inline void get_matrix_info(const dell_matrix_B<INDEX_TYPE, VALUE_TYPE, MEM_TYPE
     info.num_rows = mat.num_rows;
     info.num_cols = mat.num_cols;
     info.num_entries = mat.num_entries;
-    info.chunks = mat.chunks;
+    info.num_chunks = mat.init_chunks;
     info.chunk_size = mat.chunk_size;
     info.chunk_length = mat.chunk_length;
     info.alpha = mat.alpha;

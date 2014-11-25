@@ -16,8 +16,7 @@ void run_tests()
 
 	cusp::print(CSR_mat);
 	size_t rows = 32, cols = 32, csize = 16, clength = 16;
-	DELL_mat.resize(rows, cols, csize, clength, 256);
-	device::LoadDellMatrix_B(CSR_mat, DELL_mat);
+	DELL_mat.resize(rows, cols, csize, clength);
 }
 
 void SPMVTests()
@@ -45,7 +44,7 @@ void CheckMatrices(	dell_matrix_B<int, int, cusp::device_memory> &DELL_matA,
 	cols_A = DELL_matA.cols;
 	cols_B = DELL_matB.cols;
 	int num_rows = infoDellMatA.num_rows;
-	int chunks = infoDellMatA.chunks;
+	int num_chunks = infoDellMatA.num_chunks;
 	int chunk_size = infoDellMatA.chunk_size;
 
 	int num_diff = 0;
@@ -60,11 +59,11 @@ void CheckMatrices(	dell_matrix_B<int, int, cusp::device_memory> &DELL_matA,
 
 		for(int k = 0; k < Matrix_MDA[0]; k++)
 		{
-			int offsetA = ciA[k*chunks + cID] + (row % chunk_size)*clA[k*chunks + cID];
-			int offsetB = ciB[k*chunks + cID] + (row % chunk_size)*clB[k*chunks + cID];
+			int offsetA = ciA[k*num_chunks + cID] + (row % chunk_size)*clA[k*num_chunks + cID];
+			int offsetB = ciB[k*num_chunks + cID] + (row % chunk_size)*clB[k*num_chunks + cID];
 			int c_idx = 0;
 			
-			for(; c_idx < clA[k*chunks + cID] && r_idx < rl; c_idx++, r_idx++)
+			for(; c_idx < clA[k*num_chunks + cID] && r_idx < rl; c_idx++, r_idx++)
 			{
 				if(cols_A[offsetA + c_idx] != cols_B[offsetB + c_idx])
 				{
@@ -115,6 +114,9 @@ void CheckMatrices(	dell_matrix_B<int, int, cusp::device_memory> &DELL_mat,
 	int num_diff = 0;
 	for(int row=0; row<num_rows; ++row)
 	{
+		if(rsA[row] != GS_mat[row].size())
+			fprintf(stderr, "*** Row Size A: %d   Row Size B: %d   Row Size GS: %d\n", rsA[row], rsB[row], GS_mat[row].size());
+
 		int cID = row / infoDellMat.chunk_size;
 		int r_idxA = 0, r_idxB = 0;
 
@@ -174,21 +176,21 @@ void CheckMatrices(	dell_matrix_B<int, int, cusp::device_memory> &DELL_mat,
 
 void FillTests()
 {
-	int mat_rows = 64;
-	int mat_cols = 64;
-	int N = 32;
+	int mat_rows = 128;
+	int mat_cols = 128;
+	int N = 128;
 	int num_arrays = 40;
 	fprintf(stderr, "# of nonzeros: %d\n", N*num_arrays);
 
 	int overflow_size = 4096;
-	int ell_width = 64;
+	int ell_width = 32;
 	int chunk_size = 32;
 
 	dell_matrix_B<int, int, cusp::device_memory> DELL_matA;
 	dell_matrix_B<int, int, cusp::device_memory> DELL_matB;
 	hyb_matrix<int, int, cusp::device_memory> HYB_mat;
-	DELL_matA.resize(mat_rows, mat_cols, chunk_size, ell_width, overflow_size);
-	DELL_matB.resize(mat_rows, mat_cols, chunk_size, ell_width, overflow_size);
+	DELL_matA.resize(mat_rows, mat_cols, chunk_size, ell_width);
+	DELL_matB.resize(mat_rows, mat_cols, chunk_size, ell_width);
 	device::Initialize_Matrix(DELL_matA);
 	device::Initialize_Matrix(DELL_matB);
 	HYB_mat.resize(mat_rows, mat_cols, 0, ell_width, overflow_size);
@@ -270,9 +272,6 @@ void FillTests()
 	// cusp::print(DELL_matA.ca);
 
 	CheckMatrices(DELL_matA, HYB_mat, GS_mat);
-	//CheckMatrices(DELL_matA, DELL_matB);
-	// cusp::print(DELL_matB.overflow_rows);
-	// cusp::print(DELL_matB.overflow_cols);
 }
 
 
