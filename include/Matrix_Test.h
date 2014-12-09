@@ -3,7 +3,7 @@
 
 #define NUM_GPUS                1
 #define ARG_MAX                 512
-#define BLOCKS                  13
+#define BLOCKS                  26
 #define BLOCK_THREADS           128
 #define BLOCK_THREADS_MAX		1024
 #define DEFAULT_OVERFLOW		256
@@ -14,11 +14,7 @@
 
 #define CPU             0
 #define GPU             1
-//#define MULTI_GPU     2
 #define BUILD_TYPE      GPU         //0 is CPU 1 is GPU
-#define GPU_HYBRID      0
-#define GPU_DYNAMIC     1
-#define GPU_MATRIX      GPU_HYBRID
 
 #include <cstdlib>
 #include <cstdio>

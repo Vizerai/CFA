@@ -5,11 +5,8 @@
 #define ARG_MAX                 512
 #define BLOCKS                  32
 #define BLOCK_THREADS           256
-<<<<<<< HEAD
 #define NUM_STREAMS             9
-=======
 #define NUM_STREAMS             8
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 #define NUM_TRANSFER_FUNCS      7
 
 #define MEMORY_ALIGNMENT    4096
@@ -23,10 +20,7 @@
 #define STREAM_BOOL     4
 #define STREAM_NUM      5
 #define STREAM_VOID     6
-<<<<<<< HEAD
 #define STREAM_UPDATE   7
-=======
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 
 #define CPU             0
 #define GPU             1
@@ -72,13 +66,10 @@
 #include <cusp/print.h>
 
 //sparse matrix
-<<<<<<< HEAD
 #include "matrix_types.h"
 #include "dell_matrix.h"
-=======
 #include "sparse.h"
 #include "matrix_types.h"
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 
 bool compare_entry(const std::pair<int,int> &a, const std::pair<int,int> &b)
 {
@@ -92,8 +83,6 @@ bool compare_entry(const std::pair<int,int> &a, const std::pair<int,int> &b)
         return (a.second < b.second);
 }
 
-<<<<<<< HEAD
-=======
 template <typename INDEX_TYPE, typename VALUE_TYPE, typename MEM_TYPE>
 struct dell_matrix         //dynamic ELL matrix
 {
@@ -165,7 +154,6 @@ struct hyb_matrix         //dynamic ELL matrix
     }
 };
 
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 template <typename INDEX_TYPE, typename VALUE_TYPE, typename MEM_TYPE>
 class CFA
 {
@@ -179,13 +167,10 @@ private:
     cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::host_memory> temp_Mat[8];
     cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::host_memory> sigma;
 #elif BUILD_TYPE == GPU
-<<<<<<< HEAD
     //dell_matrix<INDEX_TYPE, VALUE_TYPE, MEM_TYPE> sigma;
     hyb_matrix<INDEX_TYPE, VALUE_TYPE, MEM_TYPE> sigma;
-=======
     dell_matrix<INDEX_TYPE, VALUE_TYPE, MEM_TYPE> sigma;
     //hyb_matrix<INDEX_TYPE, VALUE_TYPE, MEM_TYPE> sigma;
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 
     INDEX_TYPE *entry_count_host, *entry_count_device;
 
@@ -222,13 +207,10 @@ private:
     cusp::array1d<VALUE_TYPE, MEM_TYPE> s[NUM_STREAMS];
     cusp::array1d<VALUE_TYPE, MEM_TYPE> s_old[NUM_STREAMS];
     cusp::array1d<VALUE_TYPE, MEM_TYPE> s_indices[NUM_STREAMS];
-<<<<<<< HEAD
     cusp::array1d<VALUE_TYPE, MEM_TYPE> update_queue[NUM_STREAMS];
     int update_flags[NUM_STREAMS];
-=======
     cusp::array1d<VALUE_TYPE, MEM_TYPE> update_queue[NUM_STREAMS][2];
     int update_flags[NUM_STREAMS][2];
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 #else
     cusp::array1d<VALUE_TYPE, MEM_TYPE> s;
     cusp::array1d<VALUE_TYPE, MEM_TYPE> s_indices;
@@ -296,10 +278,7 @@ private:
     void f_primBool_device(const cusp::array1d<VALUE_TYPE, cusp::device_memory> &s, const int stream_ID, cudaStream_t stream);
     void f_primNum_device(const cusp::array1d<VALUE_TYPE, cusp::device_memory> &s, const int stream_ID, cudaStream_t stream);
     void f_primVoid_device(const cusp::array1d<VALUE_TYPE, cusp::device_memory> &s, const int stream_ID, cudaStream_t stream);
-<<<<<<< HEAD
     void f_UpdateStore_device(const int stream_ID, cudaStream_t stream);
-=======
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 
     void LoadMatrix(cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &src,
                     cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &dst);

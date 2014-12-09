@@ -14,8 +14,11 @@ typedef cusp::array1d<short, cusp::device_memory> 	CuspVectorShort_d;
 typedef cusp::array1d<short, cusp::host_memory> 	CuspVectorShort_h;
 typedef cusp::array1d<int, cusp::device_memory> 	CuspVectorInt_d;
 typedef cusp::array1d<int, cusp::host_memory> 		CuspVectorInt_h;
-typedef cusp::array1d<double, cusp::device_memory> 	CuspVector_d;
-typedef cusp::array1d<double, cusp::host_memory> 	CuspVector_h;
+typedef cusp::array1d<float, cusp::device_memory> 	CuspVectorS_d;
+typedef cusp::array1d<float, cusp::host_memory> 	CuspVectorS_h;
+typedef cusp::array1d<double, cusp::device_memory> 	CuspVectorD_d;
+typedef cusp::array1d<double, cusp::host_memory> 	CuspVectorD_h;
+
 #define TPC(x)		thrust::raw_pointer_cast(x)
 
 inline void safeSync()

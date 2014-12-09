@@ -5,10 +5,12 @@
 #include "matrix_info.h"
 #include "primitives_device.h"
 #include "matrix_ops_device.h"
+
 #include "scan.h"
 #include "sparse_update.inl"
-#include "spmv.inl"
 #include "sparse.h"
+#include "load.h"
+#include "spmv.h"
 
 namespace device
 {
@@ -113,7 +115,7 @@ void column_select(	const cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_
 					cudaStream_t &stream)
 {
 	mat_info<INDEX_TYPE> infoA;
-	get_matrix_info<VALUE_TYPE> (A, infoA);
+	get_matrix_info(A, infoA);
 
 #if(DEBUG)
 	assert(infoA.num_cols == s.size());
@@ -140,7 +142,7 @@ void column_select_if(	const cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::devi
 						cudaStream_t &stream)
 {
 	mat_info<INDEX_TYPE> infoA;
-	get_matrix_info<VALUE_TYPE> (A, infoA);
+	get_matrix_info(A, infoA);
 
 #if(DEBUG)
 	assert(infoA.num_cols == s.size());
@@ -190,69 +192,25 @@ void InnerProductStore(	const cusp::array1d<VALUE_TYPE, cusp::device_memory> &a,
 			TPC(&c[index]));
 }
 
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void LoadEllMatrix_device(	cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &src,
-							cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &dst)
-{
-	//src.sort_by_row_and_column();
-	dst.resize(src.num_rows, src.num_cols, src.num_entries, std::max(src.num_cols/16, ulong(64)));
+// template <typename INDEX_TYPE, typename VALUE_TYPE>
+// void OuterProduct(	const cusp::array1d<VALUE_TYPE, cusp::device_memory> &a,
+// 					const cusp::array1d<VALUE_TYPE, cusp::device_memory> &b,
+// 					cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &mat,
+// 					cudaStream_t &stream)
+// {
+// 	mat_info<INDEX_TYPE> info;
+// 	get_matrix_info(mat, info);
 
-	mat_info<INDEX_TYPE> infoDst;
-	get_matrix_info<VALUE_TYPE> (dst, infoDst);
+// #if(DEBUG)
+// 	assert(src.num_rows == infoDst.num_rows);
+// 	assert(src.num_cols == infoDst.num_cols);
+// #endif
 
-#if(DEBUG)
-	assert(src.num_rows == infoDst.num_rows);
-	assert(src.num_cols == infoDst.num_cols);
-#endif
+// 	const size_t NUM_BLOCKS = BLOCKS;
+// 	const size_t BLOCK_SIZE = BLOCK_THREADS;
 
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	LoadEllMatrix<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE>>> (
-			src.num_rows,
-			src.num_entries,
-			infoDst.num_cols_per_row,
-			infoDst.pitch,
-			TPC(&src.row_offsets[0]),
-			TPC(&src.column_indices[0]),
-			TPC(&src.values[0]),
-			TPC(&dst.column_indices.values[0]),
-			TPC(&dst.values.values[0]));
-
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void LoadHybMatrix_device(	cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &src,
-							cusp::hyb_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &dst)
-{
-	//src.sort_by_row_and_column();
-	const INDEX_TYPE invalid_index = -1;
-	dst.resize(src.num_rows, src.num_cols, src.num_entries, 256, std::max(src.num_cols/16, ulong(96)));
-	thrust::fill(dst.matrix.ell.column_indices.values.begin(), dst.matrix.ell.column_indices.values.end(), invalid_index);
-
-	mat_info<INDEX_TYPE> infoDst;
-	get_matrix_info<VALUE_TYPE> (dst, infoDst);
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void OuterProduct(	const cusp::array1d<VALUE_TYPE, cusp::device_memory> &a,
-					const cusp::array1d<VALUE_TYPE, cusp::device_memory> &b,
-					cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &mat,
-					cudaStream_t &stream)
-{
-	mat_info<INDEX_TYPE> info;
-	get_matrix_info<VALUE_TYPE> (mat, info);
-
-#if(DEBUG)
-	assert(src.num_rows == infoDst.num_rows);
-	assert(src.num_cols == infoDst.num_cols);
-#endif
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	//OuterProduct<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE, 0, stream>>>
-}
+// 	//OuterProduct<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE, 0, stream>>>
+// }
 
 template <typename INDEX_TYPE, typename VALUE_TYPE>
 void OuterProductAdd(	const cusp::array1d<VALUE_TYPE, cusp::device_memory> &a,
@@ -262,7 +220,7 @@ void OuterProductAdd(	const cusp::array1d<VALUE_TYPE, cusp::device_memory> &a,
 						cudaStream_t &stream)
 {
 	mat_info<INDEX_TYPE> info;
-	get_matrix_info<VALUE_TYPE> (mat, info);
+	get_matrix_info(mat, info);
 
 #if(DEBUG)
 	assert(info.num_rows == a.size());
@@ -292,7 +250,7 @@ void OuterProductAdd(	const cusp::array1d<VALUE_TYPE, cusp::device_memory> &a,
 						cudaStream_t &stream)
 {
 	mat_info<INDEX_TYPE> info;
-	get_matrix_info<VALUE_TYPE> (mat, info);
+	get_matrix_info(mat, info);
 
 #if(DEBUG)
 	assert(info.num_rows == a.size());
@@ -324,7 +282,7 @@ void OuterProductAdd(	const cusp::array1d<VALUE_TYPE, cusp::device_memory> &a,
 						cudaStream_t &stream)
 {
 	mat_info<INDEX_TYPE> info;
-	get_matrix_info<VALUE_TYPE> (mat, info);
+	get_matrix_info(mat, info);
 
 #if(DEBUG)
 	assert(info.num_rows == a.size());
@@ -353,282 +311,11 @@ void ell_add(	cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &A,
 {
 	mat_info<INDEX_TYPE> infoA, infoB, infoC;
 
-	get_matrix_info<VALUE_TYPE> (A, infoA);
-	get_matrix_info<VALUE_TYPE> (B, infoB);
-	get_matrix_info<VALUE_TYPE> (C, infoC);
+	get_matrix_info(A, infoA);
+	get_matrix_info(B, infoB);
+	get_matrix_info(C, infoC);
 
 	//fix this
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void spmv(	const cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &A,
-     		const cusp::array1d<VALUE_TYPE, cusp::device_memory> &x,
-			cusp::array1d<VALUE_TYPE, cusp::device_memory> &y,
-			cudaStream_t &stream)
-{
-	mat_info<INDEX_TYPE> infoA;
-	get_matrix_info<VALUE_TYPE> (A, infoA);
-
-#if(DEBUG)
-	assert(infoA.num_cols == x.size());
-	assert(infoA.num_rows == y.size());
-#endif
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	spmv_ellb<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE, 0, stream>>> (
-			infoA.num_rows,
-            infoA.num_cols_per_row,
-            infoA.pitch,
-            TPC(&A.column_indices.values[0]),
-            TPC(&x[0]), 
-        	TPC(&y[0]));
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void spmv(	const hyb_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &A,
-     		const cusp::array1d<VALUE_TYPE, cusp::device_memory> &x,
-			cusp::array1d<VALUE_TYPE, cusp::device_memory> &y,
-			cudaStream_t &stream)
-{
-	mat_info<INDEX_TYPE> infoA;
-	get_matrix_info<VALUE_TYPE> (A, infoA);
-
-#if(DEBUG)
-	assert(infoA.num_cols == x.size());
-	assert(infoA.num_rows == y.size());
-#endif
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	spmv_hybb<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE, 0, stream>>> (
-			infoA.num_rows,
-    	    infoA.num_cols_per_row,
-   			infoA.pitch,
-        	TPC(&A.matrix.ell.column_indices.values[0]),
-        	TPC(&A.matrix.coo.row_indices[0]),
-        	TPC(&A.matrix.coo.column_indices[0]),
-        	TPC(&x[0]), 
-    		TPC(&y[0]));
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void spmv(	const cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &A,
-     		const cusp::array1d<VALUE_TYPE, cusp::device_memory> &x,
-			cusp::array1d<VALUE_TYPE, cusp::device_memory> &y,
-			cudaStream_t &stream)
-{
-	mat_info<INDEX_TYPE> infoA;
-	get_matrix_info<VALUE_TYPE> (A, infoA);
-
-#if(DEBUG)
-	assert(infoA.num_cols == x.size());
-	assert(infoA.num_rows == y.size());
-#endif
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	spmv_csrb<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE, 0, stream>>> (
-			infoA.num_rows,
-        	TPC(&A.row_offsets[0]),
-        	TPC(&A.column_indices[0]),
-        	TPC(&x[0]), 
-    		TPC(&y[0]));
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void spmv(	const dell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &A,
-     		const cusp::array1d<VALUE_TYPE, cusp::device_memory> &x,
-			cusp::array1d<VALUE_TYPE, cusp::device_memory> &y,
-			cudaStream_t &stream)
-{
-	mat_info<INDEX_TYPE> infoA;
-	get_matrix_info<VALUE_TYPE> (A, infoA);
-
-#if(DEBUG)
-	assert(infoA.num_cols == x.size());
-	assert(infoA.num_rows == y.size());
-#endif
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	// spmv_dellb<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE, 0, stream>>> (
-	// 		infoA.num_rows,
- //            TPC(&A.column_indices[0]),
- //            TPC(&x[0]), 
- //        	TPC(&y[0]));
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void FillMatrix(	dell_matrix_B<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &mat,
-					cusp::array1d<INDEX_TYPE, cusp::device_memory> &rows,
-					cusp::array1d<INDEX_TYPE, cusp::device_memory> &cols,
-					const int idx,
-					const int N)
-{
-	mat_info<INDEX_TYPE> infoMat;
-	get_matrix_info<VALUE_TYPE> (mat, infoMat);
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	UpdateMatrix_dell_B<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE>>> (
-			infoMat.num_rows,
-			infoMat.chunk_size,
-			infoMat.pitch,
-			TPC(&rows[idx]),
-			TPC(&cols[idx]),
-			N,
-			TPC(&mat.Matrix_MD[0]),
-			TPC(&mat.ci[0]),
-			TPC(&mat.cl[0]),
-			TPC(&mat.ca[0]),
-			TPC(&mat.rs[0]),
-			TPC(&mat.cols[0]));
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void FillMatrixW(	dell_matrix_B<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &mat,
-					cusp::array1d<INDEX_TYPE, cusp::device_memory> &rows,
-					cusp::array1d<INDEX_TYPE, cusp::device_memory> &cols,
-					const int idx,
-					const int N)
-{
-	mat_info<INDEX_TYPE> infoMat;
-	get_matrix_info<VALUE_TYPE> (mat, infoMat);
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	UpdateMatrixW_dell_B<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE>>> (
-			infoMat.num_rows,
-			infoMat.chunk_size,
-			TPC(&rows[idx]),
-			TPC(&cols[idx]),
-			N,
-			TPC(&mat.Matrix_MD[0]),
-			TPC(&mat.ci[0]),
-			TPC(&mat.cl[0]),
-			TPC(&mat.ca[0]),
-			TPC(&mat.rs[0]),
-			TPC(&mat.cols[0]));
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void FillMatrix(	hyb_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &mat,
-					cusp::array1d<INDEX_TYPE, cusp::device_memory> &rows,
-					cusp::array1d<INDEX_TYPE, cusp::device_memory> &cols,
-					const int idx,
-					const int N)
-{
-	mat_info<INDEX_TYPE> infoMat;
-	get_matrix_info<VALUE_TYPE> (mat, infoMat);
-
-#if(DEBUG)
-	assert(src.num_rows == infoDst.num_rows);
-	assert(src.num_cols == infoDst.num_cols);
-#endif
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	UpdateMatrix_hyb_B<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE>>> (
-			infoMat.num_rows,
-			infoMat.num_cols,
-			infoMat.num_cols_per_row,
-			infoMat.pitch,
-			TPC(&rows[idx]),
-			TPC(&cols[idx]),
-			N,
-			TPC(&mat.rs[0]),
-			TPC(&mat.matrix.ell.column_indices.values[0]),
-			TPC(&mat.matrix.coo.row_indices[0]),
-			TPC(&mat.matrix.coo.column_indices[0]));
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void Initialize_Matrix(	dell_matrix_B<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &mat)
-{
-	mat_info<INDEX_TYPE> infoMat;
-	get_matrix_info<VALUE_TYPE> (mat, infoMat);
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	InitializeMatrix_dell_B<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE>>> (
-			infoMat.num_rows,
-			infoMat.num_chunks,
-			infoMat.chunk_size,
-			infoMat.chunk_length,
-			infoMat.pitch,
-			TPC(&mat.Matrix_MD[0]),
-			TPC(&mat.ci[0]),
-			TPC(&mat.cl[0]),
-			TPC(&mat.ca[0]),
-			TPC(&mat.rs[0]),
-			TPC(&mat.cols[0]));
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void LoadHybMatrix_device(	cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &src,
-							hyb_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &dst)
-{
-	//src.sort_by_row_and_column();
-	const INDEX_TYPE invalid_index = -1;
-	dst.resize(src.num_rows, src.num_cols, src.num_entries, 256, std::max(src.num_cols/16, ulong(96)));
-	thrust::fill(dst.matrix.ell.column_indices.values.begin(), dst.matrix.ell.column_indices.values.end(), invalid_index);
-
-	mat_info<INDEX_TYPE> infoDst;
-	get_matrix_info<VALUE_TYPE> (dst, infoDst);
-
-#if(DEBUG)
-	assert(src.num_rows == infoDst.num_rows);
-	assert(src.num_cols == infoDst.num_cols);
-#endif
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	LoadHybMatrix<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE>>> (
-			src.num_rows,
-			src.num_entries,
-			infoDst.num_cols_per_row,
-			infoDst.pitch,
-			TPC(&src.row_offsets[0]),
-			TPC(&src.column_indices[0]),
-			TPC(&dst.row_sizes[0]),
-			TPC(&dst.matrix.ell.column_indices.values[0]),
-			TPC(&dst.matrix.coo.row_indices[0]),
-			TPC(&dst.matrix.coo.column_indices[0]));
-
-	dst.matrix.num_entries = src.num_entries;
-}
-
-template <typename INDEX_TYPE, typename VALUE_TYPE>
-void LoadDellMatrix_device(	cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &src,
-							dell_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> &dst)
-{
-	#define ROW_SIZE	1024
-	//dst.resize(src.num_rows, src.num_cols, src.num_entries, src.num_rows*ROW_SIZE);
-
-	mat_info<INDEX_TYPE> infoDst;
-	get_matrix_info<VALUE_TYPE> (dst, infoDst);
-
-#if(DEBUG)
-	assert(src.num_rows == infoDst.num_rows);
-	assert(src.num_cols == infoDst.num_cols);
-#endif
-
-	const size_t NUM_BLOCKS = BLOCKS;
-	const size_t BLOCK_SIZE = BLOCK_THREADS;
-
-	//LoadDellMatrix<INDEX_TYPE, VALUE_TYPE> <<<NUM_BLOCKS, BLOCK_SIZE>>>
-
-	dst.num_entries = src.num_entries;
 }
 
 } //namespace device

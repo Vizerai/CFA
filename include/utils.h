@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <string>
 
-void Test(std::string filename);
-void Matrix_Test(std::string filename);
+//extern void Test(const std::string &filename);
+extern void Matrix_Test(const std::string filename);
 
 #endif

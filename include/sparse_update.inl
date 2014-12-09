@@ -361,7 +361,7 @@ Update_DELL_B(	const INDEX_TYPE num_rows,
 				INDEX_TYPE *cols)
 {
 	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
-	const int grid_size = blockDim.x * gridDim.x;
+	//const int grid_size = blockDim.x * gridDim.x;
 	const INDEX_TYPE invalid_index = -1;
 
 	for(int idx=tID; idx < total_updates; idx++)
@@ -405,6 +405,7 @@ __global__ void
 UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 					const INDEX_TYPE chunk_size,
 					const INDEX_TYPE pitch,
+					const float alpha,
 					const INDEX_TYPE *src_rows,
 					const INDEX_TYPE *src_cols,
 					const INDEX_TYPE N,
@@ -441,7 +442,6 @@ UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 
 				do
 				{
-					//INDEX_TYPE offset = ca[cID] + (row % chunk_size)*cl[cID];
 					INDEX_TYPE next_cID = ci[cID];
 					offset = ca[cID] + (row % chunk_size);
 					c_idx = 0;
@@ -468,8 +468,6 @@ UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 
 				if(c_idx < cl[cID] && rl == r_idx && valid)
 				{
-					//cuPrintf("inserting col: %d  in row: %d\n", col, row);
-					//cols[offset + c_idx] = col;
 					cols[offset + c_idx*pitch] = col;
 					rs[row] += 1;
 					//rs_s[lID] += 1;
@@ -479,7 +477,7 @@ UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 				{
 					if(atomicCAS(&ci[cID], 0, -1) == 0)
 					{
-						INDEX_TYPE chunk_length = 2*cl[cID];
+						INDEX_TYPE chunk_length = alpha*cl[cID];
 						INDEX_TYPE new_add = atomicAdd(&Matrix_MD[1], chunk_size*chunk_length);
 						INDEX_TYPE new_cID = atomicAdd(&Matrix_MD[0], 1);
 
@@ -515,34 +513,116 @@ UpdateMatrix_dell_B(const INDEX_TYPE num_rows,
 template <typename INDEX_TYPE, typename VALUE_TYPE>
 __launch_bounds__(BLOCK_THREADS,1)
 __global__ void 
-UpdateMatrixW_dell_B(	const INDEX_TYPE num_rows,
-						const INDEX_TYPE chunk_size,
-						const INDEX_TYPE *src_rows,
-						const INDEX_TYPE *src_cols,
-						const INDEX_TYPE N,
-						const INDEX_TYPE *Matrix_MD,
-						const INDEX_TYPE *ci,
-						const INDEX_TYPE *cl,
-						const INDEX_TYPE *ca,
-						INDEX_TYPE *rs,
-						INDEX_TYPE *cols)
+UpdateMatrix_dell(	const INDEX_TYPE num_rows,
+					const INDEX_TYPE chunk_size,
+					const INDEX_TYPE pitch,
+					const float alpha,
+					const INDEX_TYPE *src_rows,
+					const INDEX_TYPE *src_cols,
+					const VALUE_TYPE *src_vals,
+					const INDEX_TYPE N,
+					INDEX_TYPE *Matrix_MD,
+					INDEX_TYPE *ci,
+					INDEX_TYPE *cl,
+					INDEX_TYPE *ca,
+					INDEX_TYPE *rs,
+					INDEX_TYPE *cols,
+					VALUE_TYPE *vals)
 {
-	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
-	const int grid_size = blockDim.x * gridDim.x;
-	const int wID = threadIdx.x & (WARP_SIZE - 1);
-	const int gID = threadIdx.x / WARP_SIZE;
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;		//thread ID
+	//const int lID = threadIdx.x;								//lane ID
+	const int grid_size = blockDim.x * gridDim.x;				//grid size
 
-	__shared__ volatile int warp_pool[8*WARP_SIZE*4];
-	__shared__ volatile int pool_size[8];
+	//__shared__ volatile INDEX_TYPE rs_s[BLOCK_THREADS];
 
-	pool_size[gID] = 0;
-
-	for(INDEX_TYPE n=tID; n < num_rows; n+=grid_size)
+	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
 	{
-		for(INDEX_TYPE i=0; i < N; i+=WARP_SIZE)
-		{
+		//rs_s[lID] = rs[row];
+		//__syncthreads();
 
+		for(INDEX_TYPE i=0; i < N; i++)
+		{
+			INDEX_TYPE cID = row / chunk_size;
+			if(src_rows[i] == row)
+			{
+				INDEX_TYPE col = src_cols[i];
+				VALUE_TYPE val = src_vals[i];
+				//INDEX_TYPE rl = rs_s[lID];
+				INDEX_TYPE rl = rs[row];
+				INDEX_TYPE r_idx = 0, c_idx, offset;
+
+				bool valid = true;
+				bool next_chunk = false;
+
+				do
+				{
+					//INDEX_TYPE offset = ca[cID] + (row % chunk_size)*cl[cID];
+					INDEX_TYPE next_cID = ci[cID];
+					offset = ca[cID] + (row % chunk_size);
+					c_idx = 0;
+
+					for(; c_idx < cl[cID] && r_idx < rl && valid; c_idx++, r_idx++)
+					{
+						//if(cols[offset + c_idx] == col)
+						if(cols[offset + c_idx*pitch] == col)
+						{
+							valid = false;
+							break;
+						}
+					}
+
+					if(next_cID > 0 && r_idx < rl)
+					{
+						next_chunk = true;
+						cID = next_cID;
+					}
+					else
+						next_chunk = false;
+
+				} while(next_chunk && valid);
+
+				if(c_idx < cl[cID] && rl == r_idx && valid)
+				{
+					cols[offset + c_idx*pitch] = col;
+					vals[offset + c_idx*pitch] = val;
+					rs[row] += 1;
+					//rs_s[lID] += 1;
+					valid = false;
+				}
+				else if(valid)
+				{
+					if(atomicCAS(&ci[cID], 0, -1) == 0)
+					{
+						INDEX_TYPE chunk_length = alpha*cl[cID];
+						INDEX_TYPE new_add = atomicAdd(&Matrix_MD[1], chunk_size*chunk_length);
+						INDEX_TYPE new_cID = atomicAdd(&Matrix_MD[0], 1);
+
+						//allocate new block...
+						cl[new_cID] = chunk_length;
+						ca[new_cID] = new_add;
+						ci[cID] = new_cID;
+					}
+					
+					while(ci[cID] <= 0) {}
+
+					if(ci[cID] > 0)
+					{
+						cID = ci[cID];
+						INDEX_TYPE offset = ca[cID] + (row % chunk_size);
+
+						if(rl == r_idx)
+						{
+							cols[offset] = col;
+							vals[offset] = val;
+							rs[row] += 1;
+							//rs_s[lID] += 1;
+						}
+					}
+				}
+			}
 		}
+
+		//rs[row] = rs_s[lID];
 	}
 }
 
@@ -617,7 +697,530 @@ UpdateMatrix_hyb_B(	const INDEX_TYPE num_rows,
 template <typename INDEX_TYPE, typename VALUE_TYPE>
 __launch_bounds__(BLOCK_THREADS,1)
 __global__ void 
-InitializeMatrix_dell_B(const INDEX_TYPE num_rows,
+UpdateMatrix_hyb(	const INDEX_TYPE num_rows,
+					const INDEX_TYPE num_cols,
+					const INDEX_TYPE num_cols_per_row,
+					const INDEX_TYPE pitch,
+					const INDEX_TYPE *src_rows,
+					const INDEX_TYPE *src_cols,
+					const VALUE_TYPE *src_vals,
+					const INDEX_TYPE N,
+					INDEX_TYPE *rs,
+					INDEX_TYPE *column_indices,
+					VALUE_TYPE *vals,
+					INDEX_TYPE *overflow_rows,
+					INDEX_TYPE *overflow_cols,
+					VALUE_TYPE *overflow_vals)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
+	{
+		for(INDEX_TYPE i=0; i < N; i++)
+		{
+			if(src_rows[i] == row)
+			{
+				INDEX_TYPE offset = row;
+				INDEX_TYPE col = src_cols[i];
+				VALUE_TYPE val = src_vals[i];
+				INDEX_TYPE rl = rs[row];
+				INDEX_TYPE idx;
+				bool valid = true;
+
+				for(idx = 0; idx < rl && idx < num_cols_per_row && valid; idx++)
+				{
+					if(column_indices[offset + idx*pitch] == col)
+					{
+						valid = false;
+						break;
+					}
+				}
+
+				if(rl < num_cols_per_row && valid)
+				{
+					column_indices[offset + idx*pitch] = col;
+					vals[offset + idx*pitch] = val;
+					rs[row] += 1;
+					valid = false;
+				}
+				else if(valid) 	//overflow
+				{
+					bool ovf_valid = true;
+					for(INDEX_TYPE i=1; i <= overflow_cols[0]; ++i)
+					{
+						if(overflow_cols[i] == col && overflow_rows[i] == row)
+						{
+							ovf_valid = false;
+							break;
+						}
+					}
+
+					if(ovf_valid)
+					{
+						INDEX_TYPE index = atomicAdd(&overflow_cols[0], 1) + 1;
+						rs[row] += 1;
+						overflow_rows[index] = row;
+						overflow_cols[index] = col;
+						overflow_vals[index] = val;
+					}
+				}
+			}
+		}
+	}
+}
+
+//*******************************************************************************//
+//Load matrix from coo matrix.  Assume no duplicate entries.
+//*******************************************************************************//
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS,1)
+__global__ void 
+LoadMatrix_dell_B_coo(	const INDEX_TYPE num_rows,
+						const INDEX_TYPE chunk_size,
+						const INDEX_TYPE pitch,
+						const float alpha,
+						const INDEX_TYPE *src_rows,
+						const INDEX_TYPE *src_cols,
+						const INDEX_TYPE N,
+						INDEX_TYPE *Matrix_MD,
+						INDEX_TYPE *ci,
+						INDEX_TYPE *cl,
+						INDEX_TYPE *ca,
+						INDEX_TYPE *rs,
+						INDEX_TYPE *cols)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;		//thread ID
+	//const int lID = threadIdx.x;								//lane ID
+	const int grid_size = blockDim.x * gridDim.x;				//grid size
+
+	//__shared__ volatile INDEX_TYPE rs_s[BLOCK_THREADS];
+
+	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
+	{
+		//rs_s[lID] = rs[row];
+		//__syncthreads();
+
+		for(INDEX_TYPE i=0; i < N; i++)
+		{
+			INDEX_TYPE cID = row / chunk_size;
+			if(src_rows[i] == row)
+			{
+				INDEX_TYPE col = src_cols[i];
+				//INDEX_TYPE rl = rs_s[lID];
+				INDEX_TYPE rl = rs[row];
+				INDEX_TYPE r_idx = 0, c_idx, offset;
+
+				bool valid = true;
+				bool next_chunk = false;
+
+				do
+				{
+					//INDEX_TYPE offset = ca[cID] + (row % chunk_size)*cl[cID];
+					INDEX_TYPE next_cID = ci[cID];
+					offset = ca[cID] + (row % chunk_size);
+					c_idx = 0;
+
+					if(r_idx + cl[cID] < rl)
+						r_idx += cl[cID];
+					else
+					{
+						c_idx = rl - r_idx;
+						r_idx = rl;
+					}
+
+					if(next_cID > 0 && r_idx < rl)
+					{
+						next_chunk = true;
+						cID = next_cID;
+					}
+					else
+						next_chunk = false;
+
+				} while(next_chunk && valid);
+
+				if(c_idx < cl[cID] && rl == r_idx && valid)
+				{
+					cols[offset + c_idx*pitch] = col;
+					rs[row] += 1;
+					//rs_s[lID] += 1;
+					valid = false;
+				}
+				else if(valid)
+				{
+					if(atomicCAS(&ci[cID], 0, -1) == 0)
+					{
+						INDEX_TYPE chunk_length = alpha*cl[cID];
+						INDEX_TYPE new_add = atomicAdd(&Matrix_MD[1], chunk_size*chunk_length);
+						INDEX_TYPE new_cID = atomicAdd(&Matrix_MD[0], 1);
+
+						//allocate new block...
+						cl[new_cID] = chunk_length;
+						ca[new_cID] = new_add;
+						ci[cID] = new_cID;
+					}
+					
+					while(ci[cID] <= 0) {}
+
+					if(ci[cID] > 0)
+					{
+						cID = ci[cID];
+						INDEX_TYPE offset = ca[cID] + (row % chunk_size);
+
+						if(rl == r_idx)
+						{
+							cols[offset] = col;
+							rs[row] += 1;
+							//rs_s[lID] += 1;
+						}
+					}
+				}
+			}
+		}
+
+		//rs[row] = rs_s[lID];
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS,1)
+__global__ void 
+LoadMatrix_dell_coo(	const INDEX_TYPE num_rows,
+						const INDEX_TYPE chunk_size,
+						const INDEX_TYPE pitch,
+						const float alpha,
+						const INDEX_TYPE *src_rows,
+						const INDEX_TYPE *src_cols,
+						const VALUE_TYPE *src_vals,
+						const INDEX_TYPE N,
+						INDEX_TYPE *Matrix_MD,
+						INDEX_TYPE *ci,
+						INDEX_TYPE *cl,
+						INDEX_TYPE *ca,
+						INDEX_TYPE *rs,
+						INDEX_TYPE *cols,
+						VALUE_TYPE *vals)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;		//thread ID
+	const int btID = threadIdx.x;								//block thread ID
+	const int grid_size = blockDim.x * gridDim.x;				//grid size
+
+	__shared__ volatile INDEX_TYPE rs_s[BLOCK_THREADS];
+
+	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
+	{
+		rs_s[btID] = rs[row];
+		//__syncthreads();
+
+		for(INDEX_TYPE i=0; i < N; i++)
+		{
+			INDEX_TYPE cID = row / chunk_size;
+			if(src_rows[i] == row)
+			{
+				INDEX_TYPE col = src_cols[i];
+				VALUE_TYPE val = src_vals[i];
+				//INDEX_TYPE rl = rs[row];
+				INDEX_TYPE rl = rs_s[btID];
+				INDEX_TYPE r_idx = 0, c_idx, offset;
+				bool next_chunk = false;
+
+				do
+				{
+					INDEX_TYPE next_cID = ci[cID];
+					//offset = ca[cID] + (row % chunk_size);
+					offset = ca[cID] + (row & (chunk_size-1))*pitch;
+					c_idx = 0;
+
+					if(r_idx + cl[cID] < rl)
+						r_idx += cl[cID];
+					else
+					{
+						c_idx = rl - r_idx;
+						r_idx = rl;
+					}
+
+					if(next_cID > 0 && r_idx < rl)
+					{
+						next_chunk = true;
+						cID = next_cID;
+					}
+					else
+						next_chunk = false;
+
+				} while(next_chunk);
+
+				if(c_idx < cl[cID] && rl == r_idx)
+				{
+					//cols[offset + c_idx*pitch] = col;
+					//vals[offset + c_idx*pitch] = val;
+					cols[offset + c_idx] = col;
+					vals[offset + c_idx] = val;
+					//rs[row] += 1;
+					rs_s[btID] += 1;
+				}
+				else
+				{
+					if(atomicCAS(&ci[cID], 0, -1) == 0)
+					{
+						INDEX_TYPE chunk_length = alpha*cl[cID];
+						//INDEX_TYPE new_add = atomicAdd(&Matrix_MD[1], chunk_size*chunk_length);
+						INDEX_TYPE new_add = atomicAdd(&Matrix_MD[1], chunk_length);
+						INDEX_TYPE new_cID = atomicAdd(&Matrix_MD[0], 1);
+
+						//allocate new block...
+						cl[new_cID] = chunk_length;
+						ca[new_cID] = new_add;
+						ci[cID] = new_cID;
+					}
+					
+					while(ci[cID] <= 0) {}
+
+					if(ci[cID] > 0)
+					{
+						cID = ci[cID];
+						//INDEX_TYPE offset = ca[cID] + (row % chunk_size);
+						offset = ca[cID] + (row & (chunk_size-1))*pitch;
+
+						if(rl == r_idx)
+						{
+							cols[offset] = col;
+							vals[offset] = val;
+							//rs[row] += 1;
+							rs_s[btID] += 1;
+						}
+					}
+				}
+			}
+		}
+
+		rs[row] = rs_s[btID];
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS,1)
+__global__ void 
+LoadMatrix_hyb_B_coo(	const INDEX_TYPE num_rows,
+						const INDEX_TYPE num_cols,
+						const INDEX_TYPE num_cols_per_row,
+						const INDEX_TYPE pitch,
+						const INDEX_TYPE *src_rows,
+						const INDEX_TYPE *src_cols,
+						const INDEX_TYPE N,
+						INDEX_TYPE *rs,
+						INDEX_TYPE *column_indices,
+						VALUE_TYPE *vals,
+						INDEX_TYPE *overflow_rows,
+						INDEX_TYPE *overflow_cols)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
+	{
+		for(INDEX_TYPE i=0; i < N; i++)
+		{
+			if(src_rows[i] == row)
+			{
+				INDEX_TYPE offset = row;
+				INDEX_TYPE col = src_cols[i];
+				INDEX_TYPE rl = rs[row];
+
+				if(rl < num_cols_per_row)
+				{
+					column_indices[offset + rl*pitch] = col;
+					rs[row] += 1;
+				}
+				else //overflow
+				{
+					INDEX_TYPE index = atomicAdd(&overflow_cols[0], 1) + 1;
+					rs[row] += 1;
+					overflow_rows[index] = row;
+					overflow_cols[index] = col;
+				}
+			}
+		}
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS,1)
+__global__ void 
+LoadMatrix_hyb_coo(	const INDEX_TYPE num_rows,
+					const INDEX_TYPE num_cols,
+					const INDEX_TYPE num_cols_per_row,
+					const INDEX_TYPE pitch,
+					const INDEX_TYPE *src_rows,
+					const INDEX_TYPE *src_cols,
+					const VALUE_TYPE *src_vals,
+					const INDEX_TYPE N,
+					INDEX_TYPE *rs,
+					INDEX_TYPE *column_indices,
+					VALUE_TYPE *vals,
+					INDEX_TYPE *overflow_rows,
+					INDEX_TYPE *overflow_cols,
+					VALUE_TYPE *overflow_vals)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE offset = row;
+		INDEX_TYPE rl = 0;
+
+		for(INDEX_TYPE i=0; i < N; i++)
+		{
+			if(src_rows[i] == row)
+			{
+				INDEX_TYPE col = src_cols[i];
+				VALUE_TYPE val = src_vals[i];
+				
+				if(rl < num_cols_per_row)
+				{
+					column_indices[offset + rl*pitch] = col;
+					vals[offset + rl*pitch] = val;
+					rl++;
+				}
+				else //overflow
+				{
+					INDEX_TYPE index = atomicAdd(&overflow_cols[0], 1) + 1;
+					overflow_rows[index] = row;
+					overflow_cols[index] = col;
+					overflow_vals[index] = val;
+					rl++;
+				}
+			}
+		}
+
+		rs[row] = rl;
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS,1)
+__global__ void 
+LoadMatrix_csr_coo_SCAN(	const INDEX_TYPE num_rows,
+							const INDEX_TYPE num_cols,
+							const INDEX_TYPE *src_rows,
+							const INDEX_TYPE N,
+							INDEX_TYPE *row_offsets)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE row_size = 0;
+		for(INDEX_TYPE i=0; i < N; i++)
+		{
+			if(src_rows[i] == row)
+			{
+				row_size++;
+			}
+		}
+		row_offsets[row] = row_size;
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS,1)
+__global__ void 
+LoadMatrix_csr_coo(	const INDEX_TYPE num_rows,
+					const INDEX_TYPE num_cols,
+					const INDEX_TYPE *src_rows,
+					const INDEX_TYPE *src_cols,
+					const VALUE_TYPE *src_vals,
+					const INDEX_TYPE N,
+					INDEX_TYPE *row_offsets,
+					INDEX_TYPE *column_indices,
+					VALUE_TYPE *vals)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	for(INDEX_TYPE row=tID; row < num_rows; row+=grid_size)
+	{
+		INDEX_TYPE rl = 0;
+		INDEX_TYPE offset = row_offsets[row];
+
+		for(INDEX_TYPE i=0; i < N; i++)
+		{
+			if(src_rows[i] == row)
+			{
+				INDEX_TYPE col = src_cols[i];
+				VALUE_TYPE val = src_vals[i];
+
+				column_indices[offset + rl] = col;
+				vals[offset + rl] = val;
+				rl++;
+			}
+		}
+	}
+}
+
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS,1)
+__global__ void 
+ConvertMatrix_DELL_CSR(	const INDEX_TYPE num_rows,
+						const INDEX_TYPE chunk_size,
+						const INDEX_TYPE pitch,
+						const INDEX_TYPE *Matrix_MD,
+						const INDEX_TYPE *ci,
+						const INDEX_TYPE *cl,
+						const INDEX_TYPE *ca,
+						const INDEX_TYPE *rs,
+						const INDEX_TYPE *src_column_indices,
+						const VALUE_TYPE *src_values,
+						INDEX_TYPE *row_offsets,
+						INDEX_TYPE *dst_column_indices,
+						VALUE_TYPE *dst_values)
+{
+	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
+	const int grid_size = blockDim.x * gridDim.x;
+
+	for(INDEX_TYPE row=tID; row < num_rows; row += grid_size)
+    {
+        INDEX_TYPE rl = rs[row];
+        INDEX_TYPE r_idx = 0;
+        INDEX_TYPE cID = row / chunk_size;
+        bool next_chunk = false;
+
+        do
+        {
+            INDEX_TYPE next_cID = ci[cID];
+            //INDEX_TYPE offset = A_ca[cID] + (row % chunk_size);
+            INDEX_TYPE offset = ca[cID] + (row & (chunk_size-1))*pitch;
+            INDEX_TYPE clength = cl[cID];
+
+            INDEX_TYPE csr_row_start = row_offsets[row];
+            //csr_row_end = row_offsets[row+1];
+
+            for(INDEX_TYPE c_idx = 0; c_idx < clength && r_idx < rl; ++c_idx, ++r_idx)
+            {
+            	dst_column_indices[csr_row_start + r_idx] = src_column_indices[offset + c_idx];
+                dst_values[csr_row_start + r_idx] = src_values[offset + c_idx];
+            }
+
+            if(next_cID > 0 && r_idx < rl)
+            {
+                next_chunk = true;
+                cID = next_cID;
+            }
+            else
+                next_chunk = false;
+
+        } while(next_chunk);
+    }
+}
+
+//*******************************************************************************//
+//Initialize dell or dell_B matrix
+//*******************************************************************************//
+template <typename INDEX_TYPE, typename VALUE_TYPE>
+__launch_bounds__(BLOCK_THREADS,1)
+__global__ void 
+InitializeMatrix_dell(	const INDEX_TYPE num_rows,
 						const INDEX_TYPE chunks,
 						const INDEX_TYPE chunk_size,
 						const INDEX_TYPE chunk_length,
@@ -626,8 +1229,7 @@ InitializeMatrix_dell_B(const INDEX_TYPE num_rows,
 						INDEX_TYPE *ci,
 						INDEX_TYPE *cl,
 						INDEX_TYPE *ca,
-						INDEX_TYPE *rs,
-						INDEX_TYPE *cols)
+						INDEX_TYPE *rs)
 {
 	const int tID = blockDim.x * blockIdx.x + threadIdx.x;
 	const int grid_size = blockDim.x * gridDim.x;
@@ -638,7 +1240,7 @@ InitializeMatrix_dell_B(const INDEX_TYPE num_rows,
 		{
 			INDEX_TYPE cID = row / chunk_size;
 			//ca[cID] = cID*chunk_size*chunk_length;
-			ca[cID] = cID*chunk_size*chunk_length;
+			ca[cID] = cID*chunk_length;
 			cl[cID] = chunk_length;
 		}
 	}
@@ -646,7 +1248,8 @@ InitializeMatrix_dell_B(const INDEX_TYPE num_rows,
 	if(tID == 0)
 	{
 		Matrix_MD[0] = chunks;
-		Matrix_MD[1] = chunks*chunk_size*chunk_length;
+		//Matrix_MD[1] = chunks*chunk_size*chunk_length;		//column aligned
+		Matrix_MD[1] = chunks*chunk_length;						//row aligned
 	}
 }
 

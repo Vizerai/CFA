@@ -41,5 +41,4 @@ void runTest(int argc, char** argv)
 	std::string filename(argv[1]);
 	//Test(filename);
 	Matrix_Test(filename);
-
 }

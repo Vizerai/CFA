@@ -19,8 +19,6 @@ extern void Test(std::string filename);
 #include "host_forms.inl"
 #include "device_forms.inl"
 
-<<<<<<< HEAD
-=======
 // template <typename INDEX_TYPE, typename VALUE_TYPE, typename MEM_TYPE>
 // inline void subtract_vec(cusp::array1d<INDEX_TYPE, MEM_TYPE> &A,
 // 							cusp::array1d<INDEX_TYPE, MEM_TYPE> &B,
@@ -69,7 +67,6 @@ extern void Test(std::string filename);
 //     return devID;
 // }
 
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 template <typename INDEX_TYPE, typename VALUE_TYPE, typename MEM_TYPE>
 void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::Init_CPU()
 {
@@ -314,11 +311,8 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::ReadTestFile(const char* filename)
 					memset(entry_count_host, 0, entry_count_size);
 					checkCudaErrors( cudaMemcpy(entry_count_device, entry_count_host, entry_count_size, cudaMemcpyHostToDevice) );
 				}
-<<<<<<< HEAD
-				//#pragma omp barrier
-=======
+
 				#pragma omp barrier
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 				cusp::csr_matrix<INDEX_TYPE, VALUE_TYPE, cusp::device_memory> temp;
 				temp = B;
 				LoadMatrix(temp, sigma);
@@ -416,16 +410,10 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::Run_Analysis()
 	bool sigma_change = true, r_change = true;
 	fprintf(stderr, "m_maxCall: %d  m_maxList: %d\n", m_maxCall, m_maxList);
 	#define ITER_COUNT	5
-<<<<<<< HEAD
-
-	//cusp::print(sigma.matrix.ell);
-=======
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 
 	#pragma omp parallel num_threads(NUM_STREAMS)
 	do
 	{
-<<<<<<< HEAD
 		// int ID = omp_get_thread_num();
 		// fprintf(stderr, "thread ID: %d\n", ID);
 		
@@ -435,12 +423,6 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::Run_Analysis()
 		 	fprintf(stdout, "\n\nITERATION %d\n\n", iter);
 		// }
 
-		//if(ID == 1)
-			f_call();
-		//if(ID == 2)
-		 	f_list();
-		//if(ID == 3)
-=======
 		int ID = omp_get_thread_num();
 		fprintf(stderr, "thread ID: %d\n", ID);
 		
@@ -450,26 +432,19 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::Run_Analysis()
 			fprintf(stdout, "\n\nITERATION %d\n\n", iter);
 		}
 
-		if(ID == 1)
+		//if(ID == 1)
 			f_call();
-		if(ID == 2)
+		//if(ID == 2)
 		 	f_list();
-		if(ID == 3)
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
+		//if(ID == 3)
 			f_set();
-		if(ID == 4)
+		//if(ID == 4)
 			f_if();
-<<<<<<< HEAD
 		//if(ID == 5)
 			f_primBool();
 		//if(ID == 6)
-=======
-		if(ID == 5)
-			f_primBool();
-		if(ID == 6)
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 			f_primNum();
-		if(ID == 7)
+		//if(ID == 7)
 			f_primVoid();
 		//if(ID == 8)
 			f_UpdateStore();
@@ -479,7 +454,6 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::Run_Analysis()
 			fprintf(stdout, "\nupdate sigma\n");
 		#if BUILD_TYPE == GPU
 			sigma.num_entries = CountEntries(sigma);
-<<<<<<< HEAD
 
 			if(prev_num_entries != sigma.num_entries)
 				sigma_change = true;
@@ -501,7 +475,6 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::Run_Analysis()
 
 			//cusp::print(sigma.matrix.ell);
 			cusp::print(update_queue[STREAM_VOID]);
-=======
 
 			if(prev_num_entries != sigma.num_entries)
 				sigma_change = true;
@@ -521,7 +494,6 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::Run_Analysis()
 			int val = sigma.coo.column_indices[0];
 			fprintf(stderr, "coo entries: %d\n", val);
 
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 			//DEBUG_PRINT("r: ", r);
 			//DEBUG_PRINT("r_prime: ", r_prime);
 			r = r_prime;
@@ -564,10 +536,7 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::WriteStore()
 {
 	cusp::coo_matrix<int, VALUE_TYPE, cusp::host_memory> store;
 	CopyStore(sigma, store);
-<<<<<<< HEAD
 	fprintf(stderr, "copy complete\n");
-=======
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 
 	std::ofstream output("tests/output.dat");
 	output << "sigma " << store.num_rows << " " << store.num_cols << std::endl;
@@ -614,17 +583,14 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::CopyStore(	hyb_matrix<INDEX_TYPE, VA
 	cusp::coo_matrix<INDEX_TYPE, VALUE_TYPE, cusp::host_memory> temp;
 	temp.resize(mat.num_rows, mat.num_cols, mat.num_entries);
 
-<<<<<<< HEAD
 	const INDEX_TYPE invalid_index = cusp::ell_matrix<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::invalid_index;
-=======
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
+
     int offset = 0;
     for(int row=0; row < mat.num_rows; ++row)
     {
     	int num_cols_per_row = mat.matrix.ell.column_indices.num_cols;
     	int pitch = mat.matrix.ell.column_indices.pitch;
 
-<<<<<<< HEAD
     	int offset = 0;
         for(int n=row; n < num_cols_per_row; n+=pitch)
         {
@@ -645,7 +611,6 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::CopyStore(	hyb_matrix<INDEX_TYPE, VA
     	temp.column_indices[offset] = mat.matrix.coo.column_indices[n];
     }
 
-=======
         for(int n=row; n < num_cols_per_row; n+=pitch, offset++)
         {
         	temp.row_indices[offset] = row;
@@ -653,7 +618,6 @@ void CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::CopyStore(	hyb_matrix<INDEX_TYPE, VA
         }
     }
 
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
     cusp::transpose(temp, store);
 #else
 	cusp::transpose(mat.matrix, store);
@@ -755,17 +719,15 @@ unsigned int CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::CountEntries(cusp::ell_matri
 template <typename INDEX_TYPE, typename VALUE_TYPE, typename MEM_TYPE>
 unsigned int CFA<INDEX_TYPE, VALUE_TYPE, MEM_TYPE>::CountEntries(hyb_matrix<INDEX_TYPE, VALUE_TYPE, MEM_TYPE> &mat)
 {
-<<<<<<< HEAD
     INDEX_TYPE val = sigma.matrix.coo.column_indices[0];
     fprintf(stderr, "val: %d\n", val);
 	return thrust::reduce(sigma.row_sizes.begin(), sigma.row_sizes.end()) + val;
-=======
+
     //INDEX_TYPE val = mat.matrix.coo.column_indices[0];
     cusp::hyb_matrix<INDEX_TYPE, VALUE_TYPE, cusp::host_memory> temp = mat.matrix;
 	unsigned int val = mat.num_entries = thrust::count_if(mat.matrix.ell.column_indices.values.begin(), mat.matrix.ell.column_indices.values.end(), is_non_negative());
 	fprintf(stderr, "count entries: %d\n", val);
 	return val;
->>>>>>> 34af523d93e062575f7e92a63da63d3f27fce1fb
 }
 
 template <typename INDEX_TYPE, typename VALUE_TYPE, typename MEM_TYPE>
